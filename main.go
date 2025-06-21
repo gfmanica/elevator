@@ -8,81 +8,60 @@ import (
 )
 
 const (
-	NumFloors     = 10
-	NumPassengers = 5 // Menos passageiros para uma demonstração mais clara
+	NumeroDeSapos    = 5
+	DistanciaCorrida = 50
 )
 
-// PassengerRequest representa uma solicitação de viagem simples.
-type PassengerRequest struct {
-	ID               int
-	DestinationFloor int
-}
-
-// elevator é uma goroutine que simula um elevador simples.
-// Ele começa no andar 0 e atende às solicitações na ordem em que chegam.
-func elevator(requests <-chan PassengerRequest, wg *sync.WaitGroup) {
+// sapo é uma goroutine que simula um sapo na corrida.
+func sapo(nome string, linhaDeChegada chan<- string, wg *sync.WaitGroup, declareWinnerOnce *sync.Once) {
+	// garante que o WaitGroup será notificado quando a goroutine terminar.
 	defer wg.Done()
-	fmt.Println("Elevador iniciado no andar 0.")
-	currentFloor := 0
 
-	// O 'for range' processa cada solicitação que chega no canal.
-	// O loop termina quando o canal 'requests' é fechado pela função main.
-	for req := range requests {
-		fmt.Printf("Elevador: Recebeu solicitação do Passageiro %d para o andar %d.\n", req.ID, req.DestinationFloor)
+	distanciaPecorrida := 0
 
-		// Move para o andar de destino
-		for currentFloor != req.DestinationFloor {
-			time.Sleep(500 * time.Millisecond) // Simula o tempo de viagem
-			if currentFloor < req.DestinationFloor {
-				currentFloor++
-			} else {
-				currentFloor--
-			}
-			fmt.Printf("Elevador: movendo... andar atual %d\n", currentFloor)
-		}
+	for distanciaPecorrida < DistanciaCorrida {
+		// Simula um pulo com uma pausa aleatória.
+		salto := rand.Intn(5) + 1
 
-		fmt.Printf("Elevador: Chegou ao andar %d. Passageiro %d desembarcou.\n", currentFloor, req.ID)
+		distanciaPecorrida += salto
+
+		time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+		
+		fmt.Printf("Sapo %s pulou para a posição %d\n", nome, distanciaPecorrida)
 	}
 
-	fmt.Println("Elevador: Todas as solicitações atendidas. Desligando.")
-}
+	fmt.Printf("--- Sapo %s cruzou a linha de chegada! ---\n", nome)
 
-// passenger é uma goroutine que simula uma pessoa solicitando uma viagem.
-func passenger(id int, requests chan<- PassengerRequest, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	destination := rand.Intn(NumFloors)
-	fmt.Printf("Passageiro %d: Pressionou o botão para o andar %d.\n", id, destination)
-
-	// Envia a solicitação para o canal do elevador.
-	requests <- PassengerRequest{ID: id, DestinationFloor: destination}
+	// usa sync.Once para garantir que o vencedor seja declarado apenas uma vez.
+	// apenas a primeira goroutine a chamar Do() executará a função.
+	declareWinnerOnce.Do(func() {
+		linhaDeChegada <- nome
+	})
 }
 
 func main() {
-	var elevatorWg sync.WaitGroup
-	var passengerWg sync.WaitGroup
+	var wg sync.WaitGroup
+	var declareWinnerOnce sync.Once // variável para garantir uma única execução.
 
-	// Canal para os passageiros enviarem suas solicitações de destino.
-	requests := make(chan PassengerRequest, NumPassengers)
+	// canal para comunicar o vencedor. O buffer de 1 garante que
+	// o primeiro sapo a chegar não fique bloqueado.
+	linhaDeChegada := make(chan string, 1)
 
-	// Inicia a goroutine do elevador.
-	elevatorWg.Add(1)
-	go elevator(requests, &elevatorWg)
+	fmt.Println("Começou a corrida!")
 
-	// Inicia as goroutines dos passageiros.
-	for i := 1; i <= NumPassengers; i++ {
-		passengerWg.Add(1)
-		go passenger(i, requests, &passengerWg)
+	// inicia as goroutines dos sapos.
+	for i := 1; i <= NumeroDeSapos; i++ {
+		wg.Add(1)
+		nomeSapo := fmt.Sprintf("%d", i)
+		go sapo(nomeSapo, linhaDeChegada, &wg, &declareWinnerOnce)
 	}
 
-	// Espera todos os passageiros terminarem de fazer suas solicitações.
-	passengerWg.Wait()
+	// espera o primeiro sapo cruzar a linha de chegada.
+	vencedor := <-linhaDeChegada
+	fmt.Printf("\n🎉 O Sapo %s venceu a corrida! 🎉\n\n", vencedor)
 
-	// Fecha o canal de solicitações para sinalizar ao elevador que não há mais passageiros.
-	close(requests)
+	// espera todos os outros sapos terminarem a corrida.
+	wg.Wait()
 
-	// Espera o elevador terminar de processar todas as solicitações.
-	elevatorWg.Wait()
-
-	fmt.Println("Simulação concluída.")
+	fmt.Println("Todos os sapos terminaram a corrida.")
 }
